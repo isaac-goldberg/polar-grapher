@@ -1,0 +1,23 @@
+@font-face {
+    font-family: "Inter-Regular";
+    src: url("/assets/Inter-Regular.ttf");
+}
+
+body {
+    background-color: #ddd;
+}
+
+#graph {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+}
+
+div {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    font-family: "Inter-Regular";
+    font-size: 16px;
+    background: #FFFD;
+}
