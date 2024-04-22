@@ -46,8 +46,14 @@ const scaleRate = 1.005; // Closer to 1: slower rate of change, less than 1: inv
 
 const defaultLabelFontSize = 20;
 const defaultPointRadius = 5;
+const defaultDomainStart = 0;
+const defaultDomainEnd = 2 * Math.PI;
+const defaultStep = 0.01;
 
-const points = [[1, 1]];
+const points = [[0, 0]];
+const functions = [
+    "5cos(6x)",
+]
 
 function mouseEvents(e) {
     const bounds = canvas.getBoundingClientRect();
@@ -73,13 +79,13 @@ const panZoom = {
         this.x = x - (x - this.x) * sc;
         this.y = y - (y - this.y) * sc;
     },
-    toWorld(...args) {
+    polarToRect(...args) {
         function f(x, y) {
-            return [x * 128, y * -128];
+            return [x * Math.cos(y) * defaultGridSize, x * Math.sin(y) * -defaultGridSize];
         }
         if (args.length == 1) return f(args[0][0], args[0][1]);
         else return f(args[0], args[1]);
-    }
+    },
 }
 function drawGrid(gridScreenSize) {
     var scale, gridScale, size, x, y;
@@ -164,6 +170,24 @@ function drawGrid(gridScreenSize) {
     ctx.stroke();
     // ------------------------------------------------------
 
+    
+
+    // ------------------------------------------------------
+    // RADIAL GRID LINES
+    // ------------------------------------------------------
+    panZoom.apply();
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    for (i = 0; i < size; i += gridScale) {
+        var xi = x + i;
+        var yi = y + i;
+        ctx.arc(0, 0, Math.abs(xi), 0, 2 * Math.PI);
+        ctx.arc(0, 0, Math.abs(yi), 0, 2 * Math.PI);
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
+    ctx.stroke();
+    // ------------------------------------------------------
+
 
 
     // ------------------------------------------------------
@@ -189,11 +213,33 @@ function drawGrid(gridScreenSize) {
     // draw points
     panZoom.apply();
     for (const point of points) {
-        var p = panZoom.toWorld(point);
+        var p = panZoom.polarToRect(point);
         ctx.beginPath();
         ctx.arc(p[0], p[1], defaultPointRadius * sf, 0, 2 * Math.PI);
         ctx.fill();
 
+        ctx.closePath();
+    }
+
+    for (const func of functions) {
+        var node = math.parse(func);
+        var f = node.compile();
+
+        var fPoints = [];
+        for (let angle = defaultDomainStart; angle < defaultDomainEnd; angle += defaultStep *sf) {
+            fPoints.push([f.evaluate({ x: angle }), angle]);
+        }
+        panZoom.apply();
+        ctx.beginPath();
+        for (let i = 0; i < fPoints.length; i++) {
+            if (i == fPoints.length - 1) break;
+            var p1 = panZoom.polarToRect(fPoints[i]);
+            var p2 = panZoom.polarToRect(fPoints[i + 1]);
+            ctx.moveTo(p1[0], p1[1]);
+            ctx.lineTo(p2[0], p2[1]);
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
+        ctx.stroke();
         ctx.closePath();
     }
 }
