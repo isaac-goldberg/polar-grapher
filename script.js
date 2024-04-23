@@ -40,20 +40,18 @@ font.load().then(f => document.fonts.add(f));
 
 requestAnimationFrame(update);
 const mouse = { x: 0, y: 0, button: false, wheel: 0, lastX: 0, lastY: 0, drag: false };
-const gridLimit = 64;  // max grid lines for static grid
 const defaultGridSize = 128;  // grid size in screen pixels for adaptive and world pixels for static
-const scaleRate = 1.005; // Closer to 1: slower rate of change, less than 1: inverts scaling change and same rule
+const scaleRate = 1.02; // Closer to 1: slower rate of change, less than 1: inverts scaling change and same rule
 
-const defaultLabelFontSize = 20;
+const defaultLabelFontSize = 32;
 const defaultPointRadius = 5;
 const defaultDomainStart = 0;
 const defaultDomainEnd = 2 * Math.PI;
 const defaultStep = 0.01;
+const defaultAnimTime = 10; // seconds to finish drawing a graph
 
 const points = [[0, 0]];
-const functions = [
-    "5cos(6x)",
-]
+const graphs = [];
 
 function mouseEvents(e) {
     const bounds = canvas.getBoundingClientRect();
@@ -70,8 +68,8 @@ function mouseEvents(e) {
 document.addEventListener("wheel", mouseEvents, { passive: false });
 
 const panZoom = {
-    x: window.innerWidth / 2,
-    y: window.innerHeight / 2,
+    x: window.innerWidth * window.devicePixelRatio * 0.5,
+    y: window.innerHeight * window.devicePixelRatio * 0.5,
     scale: 1,
     apply() { ctx.setTransform(this.scale, 0, 0, this.scale, this.x, this.y) },
     scaleAt(x, y, sc) {  // x & y are screen coords, not world
@@ -87,10 +85,10 @@ const panZoom = {
         else return f(args[0], args[1]);
     },
 }
-function drawGrid(gridScreenSize) {
+function drawGrid() {
     var scale, gridScale, size, x, y;
     scale = 1 / panZoom.scale;
-    gridScale = 2 ** (Math.log2(gridScreenSize * scale) | 0);
+    gridScale = 2 ** (Math.log2(defaultGridSize * scale) | 0);
     size = Math.max(w, h) * scale + gridScale * 2;
     x = ((-panZoom.x * scale - gridScale) / gridScale | 0) * gridScale;
     y = ((-panZoom.y * scale - gridScale) / gridScale | 0) * gridScale;
@@ -194,7 +192,7 @@ function drawGrid(gridScreenSize) {
     // X AND Y AXES
     // ------------------------------------------------------
     panZoom.apply()
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.strokeStyle = "#000"
     ctx.beginPath();
     ctx.moveTo(0, y);
@@ -208,8 +206,6 @@ function drawGrid(gridScreenSize) {
 
 
 
-    info.textContent = "Scale: 1px = " + (1 / panZoom.scale).toFixed(4) + " world px ";
-
     // draw points
     panZoom.apply();
     for (const point of points) {
@@ -221,20 +217,15 @@ function drawGrid(gridScreenSize) {
         ctx.closePath();
     }
 
-    for (const func of functions) {
-        var node = math.parse(func);
-        var f = node.compile();
-
-        var fPoints = [];
-        for (let angle = defaultDomainStart; angle < defaultDomainEnd; angle += defaultStep *sf) {
-            fPoints.push([f.evaluate({ x: angle }), angle]);
-        }
+    ctx.lineWidth = 4;
+    for (const func of graphs) {
         panZoom.apply();
+        ctx.strokeStyle = func.color;
         ctx.beginPath();
-        for (let i = 0; i < fPoints.length; i++) {
-            if (i == fPoints.length - 1) break;
-            var p1 = panZoom.polarToRect(fPoints[i]);
-            var p2 = panZoom.polarToRect(fPoints[i + 1]);
+        for (let i = 0; i < func.points.length; i++) {
+            if (i == func.points.length - 1) break;
+            var p1 = func.points[i];
+            var p2 = func.points[i + 1];
             ctx.moveTo(p1[0], p1[1]);
             ctx.lineTo(p2[0], p2[1]);
         }
@@ -247,22 +238,26 @@ function drawGrid(gridScreenSize) {
 var w = canvas.width;
 var h = canvas.height;
 function update() {
+    var ratio = window.devicePixelRatio;
+
     ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
     ctx.globalAlpha = 1;           // reset alpha
-    if (w !== innerWidth || h !== innerHeight) {
-        w = canvas.width = innerWidth;
-        h = canvas.height = innerHeight;
+    if (w !== window.innerWidth || h !== window.innerHeight) {
+        w = canvas.width = window.innerWidth * ratio;
+        h = canvas.height = window.innerHeight * ratio;
+        canvas.style.width = window.innerWidth + "px";
+        canvas.style.height = window.innerHeight + "px";
     } else {
         ctx.clearRect(0, 0, w, h);
     }
     if (mouse.wheel !== 0) {
         let scale = 1;
         scale = mouse.wheel < 0 ? 1 / scaleRate : scaleRate;
-        mouse.wheel *= 0.8;
+        mouse.wheel *= 0.2;
         if (Math.abs(mouse.wheel) < 1) {
             mouse.wheel = 0;
         }
-        panZoom.scaleAt(mouse.x, mouse.y, scale); //scale is the change in scale
+        panZoom.scaleAt(mouse.x * ratio, mouse.y * ratio, scale); //scale is the change in scale
     }
     if (mouse.button) {
         if (!mouse.drag) {
@@ -270,23 +265,34 @@ function update() {
             mouse.lastY = mouse.y;
             mouse.drag = true;
         } else {
-            panZoom.x += mouse.x - mouse.lastX;
-            panZoom.y += mouse.y - mouse.lastY;
+            panZoom.x += (mouse.x - mouse.lastX) * ratio;
+            panZoom.y += (mouse.y - mouse.lastY) * ratio;
             mouse.lastX = mouse.x;
             mouse.lastY = mouse.y;
         }
     } else if (mouse.drag) {
         mouse.drag = false;
     }
-    drawGrid(defaultGridSize);
-    requestAnimationFrame(update);
+    drawGrid();
+    window.requestAnimationFrame(update);
 }
 
-function getRandomColor() {
-    var letters = '0123456789ABCDEF';
-    var color = '#';
-    for (var i = 0; i < 6; i++) {
-      color += letters[Math.floor(Math.random() * 16)];
+function addGraph(func) {
+    var node = math.parse(func);
+    var f = node.compile();
+
+    const sf = scaleRate / panZoom.scale; // sf stands for scale factor
+
+    const points = [];
+    for (let angle = defaultDomainStart; angle < defaultDomainEnd; angle += defaultStep *sf) {
+        var p = panZoom.polarToRect([f.evaluate({ x: angle }), angle]);
+        points.push(p);
     }
-    return color;
-  }
+
+    graphs.push({
+        func,
+        color: "#f00",
+        points,
+    });
+}
+addGraph("5cos(5x)");
