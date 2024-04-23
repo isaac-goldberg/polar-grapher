@@ -31,6 +31,13 @@
 
 
 //////////////////////
+const defaultLabelFontSize = 24;
+const defaultPointRadius = 5;
+const defaultDomainStart = 0;
+const defaultDomainEnd = 2 * Math.PI;
+const defaultStep = 0.01;
+const defaultAnimTime = 10; // seconds to finish drawing a graph
+
 // taken from: https://stackoverflow.com/a/53329817/16158590
 
 const canvas = document.getElementById("graph");
@@ -43,14 +50,7 @@ const mouse = { x: 0, y: 0, button: false, wheel: 0, lastX: 0, lastY: 0, drag: f
 const defaultGridSize = 128;  // grid size in screen pixels for adaptive and world pixels for static
 const scaleRate = 1.02; // Closer to 1: slower rate of change, less than 1: inverts scaling change and same rule
 
-const defaultLabelFontSize = 32;
-const defaultPointRadius = 5;
-const defaultDomainStart = 0;
-const defaultDomainEnd = 2 * Math.PI;
-const defaultStep = 0.01;
-const defaultAnimTime = 10; // seconds to finish drawing a graph
-
-const points = [[0, 0]];
+const points = [[1, Math.PI / 2]];
 const graphs = [];
 
 function mouseEvents(e) {
@@ -67,9 +67,17 @@ function mouseEvents(e) {
 ["mousedown", "mouseup", "mousemove"].forEach(name => document.addEventListener(name, mouseEvents));
 document.addEventListener("wheel", mouseEvents, { passive: false });
 
+function getWindowPoleX() {
+    return window.innerWidth * window.devicePixelRatio * 0.5;
+}
+
+function getWindowPoleY() {
+    return window.innerHeight * window.devicePixelRatio * 0.5;
+}
+
 const panZoom = {
-    x: window.innerWidth * window.devicePixelRatio * 0.5,
-    y: window.innerHeight * window.devicePixelRatio * 0.5,
+    x: getWindowPoleX(),
+    y: getWindowPoleY(),
     scale: 1,
     apply() { ctx.setTransform(this.scale, 0, 0, this.scale, this.x, this.y) },
     scaleAt(x, y, sc) {  // x & y are screen coords, not world
@@ -84,12 +92,17 @@ const panZoom = {
         if (args.length == 1) return f(args[0][0], args[0][1]);
         else return f(args[0], args[1]);
     },
+    poleDist() {
+        var x = this.x - getWindowPoleX();
+        var y = this.y - getWindowPoleY();
+        return Math.sqrt((x ** 2) + (y ** 2));
+    }
 }
 function drawGrid() {
     var scale, gridScale, size, x, y;
     scale = 1 / panZoom.scale;
     gridScale = 2 ** (Math.log2(defaultGridSize * scale) | 0);
-    size = Math.max(w, h) * scale + gridScale * 2;
+    size = Math.max(canvas.width, canvas.height) * scale + gridScale * 2;
     x = ((-panZoom.x * scale - gridScale) / gridScale | 0) * gridScale;
     y = ((-panZoom.y * scale - gridScale) / gridScale | 0) * gridScale;
 
@@ -107,8 +120,9 @@ function drawGrid() {
     for (i = 0; i < size; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
-        var newX = Math.round(Math.abs(xi / defaultGridSize) * 100) / 100;
-        var newY = Math.round(Math.abs(yi / defaultGridSize) * 100) / 100;
+
+        var newX = formatLabel(Math.abs(xi / defaultGridSize));
+        var newY = formatLabel(Math.abs(yi / defaultGridSize));
         var yMetrics = ctx.measureText(newY);
         
         // vertical lines with fixed gap for x labels
@@ -176,7 +190,7 @@ function drawGrid() {
     panZoom.apply();
     ctx.lineWidth = 0.6;
     ctx.beginPath();
-    for (i = 0; i < size; i += gridScale) {
+    for (i = 0; i < (size + panZoom.poleDist()) * sf; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
         ctx.arc(0, 0, Math.abs(xi), 0, 2 * Math.PI);
@@ -217,7 +231,7 @@ function drawGrid() {
         ctx.closePath();
     }
 
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3.25;
     for (const func of graphs) {
         panZoom.apply();
         ctx.strokeStyle = func.color;
@@ -253,7 +267,7 @@ function update() {
     if (mouse.wheel !== 0) {
         let scale = 1;
         scale = mouse.wheel < 0 ? 1 / scaleRate : scaleRate;
-        mouse.wheel *= 0.2;
+        mouse.wheel *= 0.4;
         if (Math.abs(mouse.wheel) < 1) {
             mouse.wheel = 0;
         }
@@ -295,4 +309,8 @@ function addGraph(func) {
         points,
     });
 }
-addGraph("5cos(5x)");
+addGraph("5cos(2x)");
+
+function formatLabel(num) {
+    return Math.round(num * 100) / 100;
+}
