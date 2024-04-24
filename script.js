@@ -1,42 +1,11 @@
-// const max = 100;
-// const canvas = document.getElementById("graph");
-// const ctx = canvas.getContext("2d");
-
-// function init() {
-//     canvas.width = 1000;
-//     canvas.height = 1000;
-//     ctx.translate(canvas.width / 2, canvas.height / 2);
-
-//     window.requestAnimationFrame(draw);
-// }
-
-// var lastCoords = { x: 0, y: 0 };
-
-// function draw() {
-//     var { x, y } = lastCoords;
-
-//     ctx.beginPath();
-//     ctx.moveTo(x, y);
-//     ctx.lineTo(x + 1, y + 1);
-//     ctx.stroke();
-//     ctx.closePath();
-
-//     lastCoords.x += 1;
-//     lastCoords.y += 1;
-
-//     if (x < max) window.requestAnimationFrame(draw);
-// }
-
-// init();
-
-
-//////////////////////
 const defaultLabelFontSize = 24;
 const defaultPointRadius = 5;
 const defaultDomainStart = 0;
 const defaultDomainEnd = 2 * Math.PI;
 const defaultStep = 0.01;
-const defaultAnimTime = 10; // seconds to finish drawing a graph
+const defaultAnimTime = 7; // seconds to finish drawing a graph
+
+const colors = ["red", "green", "blue", "orange", "purple", "magenta", "darkred", "#00bbff", "#0d0", "#ffbf00"]
 
 // taken from: https://stackoverflow.com/a/53329817/16158590
 
@@ -49,6 +18,8 @@ requestAnimationFrame(update);
 const mouse = { x: 0, y: 0, button: false, wheel: 0, lastX: 0, lastY: 0, drag: false };
 const defaultGridSize = 128;  // grid size in screen pixels for adaptive and world pixels for static
 const scaleRate = 1.02; // Closer to 1: slower rate of change, less than 1: inverts scaling change and same rule
+const minScale = 0.012;
+const maxScale = 200;
 
 const points = [[1, Math.PI / 2]];
 const graphs = [];
@@ -81,6 +52,7 @@ const panZoom = {
     scale: 1,
     apply() { ctx.setTransform(this.scale, 0, 0, this.scale, this.x, this.y) },
     scaleAt(x, y, sc) {  // x & y are screen coords, not world
+        if (this.scale * sc > maxScale || this.scale * sc < minScale) return;
         this.scale *= sc;
         this.x = x - (x - this.x) * sc;
         this.y = y - (y - this.y) * sc;
@@ -190,7 +162,8 @@ function drawGrid() {
     panZoom.apply();
     ctx.lineWidth = 0.6;
     ctx.beginPath();
-    for (i = 0; i < (size + panZoom.poleDist()) * sf; i += gridScale) {
+    var radialSize = (size + panZoom.poleDist()) * sf;
+    for (i = 0; i < radialSize; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
         ctx.arc(0, 0, Math.abs(xi), 0, 2 * Math.PI);
@@ -232,26 +205,37 @@ function drawGrid() {
     }
 
     ctx.lineWidth = 3.25;
-    for (const func of graphs) {
+    for (const graph of graphs) {
         panZoom.apply();
-        ctx.strokeStyle = func.color;
+        ctx.strokeStyle = graph.color;
         ctx.beginPath();
-        for (let i = 0; i < func.points.length; i++) {
-            if (i == func.points.length - 1) break;
-            var p1 = func.points[i];
-            var p2 = func.points[i + 1];
+        for (let i = 0; i < graph.renderPoints.length; i++) {
+            var p1 = graph.renderPoints[i];
+            if (i == graph.renderPoints.length - 1) {
+                ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
+                ctx.stroke();
+                ctx.closePath();
+
+                if (!graph.animDone) {
+                    panZoom.apply();
+                    ctx.fillStyle = "#000"
+                    ctx.beginPath();
+                    ctx.arc(p1[0], p1[1], 8 * sf, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.closePath();
+                }
+                break;
+            };
+            var p2 = graph.renderPoints[i + 1];
             ctx.moveTo(p1[0], p1[1]);
             ctx.lineTo(p2[0], p2[1]);
         }
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
-        ctx.stroke();
-        ctx.closePath();
     }
 }
 
 var w = canvas.width;
 var h = canvas.height;
-function update() {
+function update(timestamp) {
     var ratio = window.devicePixelRatio;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
@@ -288,7 +272,27 @@ function update() {
         mouse.drag = false;
     }
     drawGrid();
+    animateGraphs(timestamp);
     window.requestAnimationFrame(update);
+}
+
+var lastTime;
+function animateGraphs(timestamp) {
+    var elapsed = timestamp - lastTime;
+    for (var graph of graphs) {
+        if (graph.animDone) continue;
+        var pointsPerSec = graph.totalPoints / defaultAnimTime;
+        var pointsInFrame = pointsPerSec * (elapsed / 1000);
+
+        var removedPoints = graph.unusedPoints.splice(0, pointsInFrame);
+        graph.renderPoints.push(...removedPoints);
+        if (graph.unusedPoints.length == 0) {
+            graph.animDone = true;
+        }
+    }
+
+    lastTime = timestamp;
+    requestAnimationFrame(animateGraphs);
 }
 
 function addGraph(func) {
@@ -297,19 +301,26 @@ function addGraph(func) {
 
     const sf = scaleRate / panZoom.scale; // sf stands for scale factor
 
-    const points = [];
-    for (let angle = defaultDomainStart; angle < defaultDomainEnd; angle += defaultStep *sf) {
+    const allPoints = [];
+    var maxInput = (defaultDomainEnd + (defaultStep * sf));
+    for (let angle = defaultDomainStart; angle <= maxInput; angle += defaultStep * sf) {
         var p = panZoom.polarToRect([f.evaluate({ x: angle }), angle]);
-        points.push(p);
+        allPoints.push(p);
     }
 
-    graphs.push({
+    var obj = {
         func,
-        color: "#f00",
-        points,
-    });
+        color: colors[Math.floor(Math.random() * colors.length)],
+        totalPoints: allPoints.length,
+        unusedPoints: allPoints,
+        renderPoints: [],
+        animDone: false,
+    }
+
+    graphs.push(obj);
 }
-addGraph("5cos(2x)");
+addGraph("3cos(5x)");
+addGraph("2sin(3x)");
 
 function formatLabel(num) {
     return Math.round(num * 100) / 100;
