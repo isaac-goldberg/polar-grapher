@@ -1,3 +1,5 @@
+// grid panning/zooming based on: https://stackoverflow.com/a/53329817/16158590
+
 const defaultLabelFontSize = 24;
 const defaultPointRadius = 5;
 const defaultDomainStart = 0;
@@ -5,9 +7,7 @@ const defaultDomainEnd = 2 * Math.PI;
 const defaultStep = 0.01;
 const defaultAnimTime = 7; // seconds to finish drawing a graph
 
-const colors = ["red", "green", "blue", "orange", "purple", "magenta", "darkred", "#00bbff", "#0d0", "#ffbf00"]
-
-// taken from: https://stackoverflow.com/a/53329817/16158590
+const colors = ["red", "green", "blue", "orange", "purple", "magenta", "darkred", "#00bbff", "#0d0", "#a39e00"]
 
 const canvas = document.getElementById("graph");
 const ctx = canvas.getContext("2d");
@@ -162,7 +162,7 @@ function drawGrid() {
     panZoom.apply();
     ctx.lineWidth = 0.6;
     ctx.beginPath();
-    var radialSize = (size + panZoom.poleDist()) * sf;
+    var radialSize = (size * sf) + panZoom.poleDist();
     for (i = 0; i < radialSize; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
@@ -211,11 +211,14 @@ function drawGrid() {
         ctx.beginPath();
         for (let i = 0; i < graph.renderPoints.length; i++) {
             var p1 = graph.renderPoints[i];
+
+            // if this is the last point on the curve
             if (i == graph.renderPoints.length - 1) {
                 ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
                 ctx.stroke();
                 ctx.closePath();
 
+                // draw cursor at end of curve unless graph is already done
                 if (!graph.animDone) {
                     panZoom.apply();
                     ctx.fillStyle = "#000"
@@ -225,7 +228,8 @@ function drawGrid() {
                     ctx.closePath();
                 }
                 break;
-            };
+            }
+
             var p2 = graph.renderPoints[i + 1];
             ctx.moveTo(p1[0], p1[1]);
             ctx.lineTo(p2[0], p2[1]);
@@ -239,7 +243,7 @@ function update(timestamp) {
     var ratio = window.devicePixelRatio;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
-    ctx.globalAlpha = 1;           // reset alpha
+    ctx.globalAlpha = 1; // reset alpha
     if (w !== window.innerWidth || h !== window.innerHeight) {
         w = canvas.width = window.innerWidth * ratio;
         h = canvas.height = window.innerHeight * ratio;
@@ -255,7 +259,7 @@ function update(timestamp) {
         if (Math.abs(mouse.wheel) < 1) {
             mouse.wheel = 0;
         }
-        panZoom.scaleAt(mouse.x * ratio, mouse.y * ratio, scale); //scale is the change in scale
+        panZoom.scaleAt(mouse.x * ratio, mouse.y * ratio, scale); // scale is the CHANGE in scale
     }
     if (mouse.button) {
         if (!mouse.drag) {
@@ -276,23 +280,23 @@ function update(timestamp) {
     window.requestAnimationFrame(update);
 }
 
-var lastTime;
 function animateGraphs(timestamp) {
-    var elapsed = timestamp - lastTime;
     for (var graph of graphs) {
         if (graph.animDone) continue;
+        var elapsed = timestamp - graph.lastRenderUpdate;
         var pointsPerSec = graph.totalPoints / defaultAnimTime;
         var pointsInFrame = pointsPerSec * (elapsed / 1000);
+
+        if (pointsInFrame < 1) continue;
 
         var removedPoints = graph.unusedPoints.splice(0, pointsInFrame);
         graph.renderPoints.push(...removedPoints);
         if (graph.unusedPoints.length == 0) {
             graph.animDone = true;
         }
-    }
 
-    lastTime = timestamp;
-    requestAnimationFrame(animateGraphs);
+        graph.lastRenderUpdate = timestamp;
+    }
 }
 
 function addGraph(func) {
@@ -314,14 +318,16 @@ function addGraph(func) {
         totalPoints: allPoints.length,
         unusedPoints: allPoints,
         renderPoints: [],
+        lastRenderUpdate: performance.now(),
         animDone: false,
     }
 
     graphs.push(obj);
 }
-addGraph("3cos(5x)");
-addGraph("2sin(3x)");
 
 function formatLabel(num) {
     return Math.round(num * 100) / 100;
 }
+
+addGraph("3cos(2x)");
+addGraph("2sin(3x)");
