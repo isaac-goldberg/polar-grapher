@@ -1,11 +1,13 @@
 // grid panning/zooming based on: https://stackoverflow.com/a/53329817/16158590
 
+import { parseTex } from "./libraries/latex2math/index.js"
+
 const defaultLabelFontSize = 24;
 const defaultPointRadius = 5;
 const defaultDomainStart = 0;
 const defaultDomainEnd = 2 * Math.PI;
 const defaultStep = 0.01;
-const defaultAnimTime = 7; // seconds to finish drawing a graph
+const defaultAnimTime = 10; // seconds to finish drawing a graph
 
 const colors = ["red", "green", "blue", "orange", "purple", "magenta", "darkred", "#00bbff", "#0d0", "#a39e00"]
 
@@ -89,7 +91,7 @@ function drawGrid() {
     ctx.fillStyle = "#000"
     ctx.font = `${defaultLabelFontSize * sf}px 'Inter-Regular'`
     ctx.beginPath();
-    for (i = 0; i < size; i += gridScale) {
+    for (let i = 0; i < size; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
 
@@ -140,7 +142,7 @@ function drawGrid() {
     ctx.lineWidth = 0.5;
     ctx.strokeStyle = "#999"
     ctx.beginPath();
-    for (i = 0; i < size; i += gridScale) {
+    for (let i = 0; i < size; i += gridScale) {
         var xi = x + i + (gridScale / 2);
         var yi = y + i + (gridScale / 2);
         
@@ -163,7 +165,7 @@ function drawGrid() {
     ctx.lineWidth = 0.6;
     ctx.beginPath();
     var radialSize = (size * sf) + panZoom.poleDist();
-    for (i = 0; i < radialSize; i += gridScale) {
+    for (let i = 0; i < radialSize; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
         ctx.arc(0, 0, Math.abs(xi), 0, 2 * Math.PI);
@@ -283,25 +285,25 @@ function update(timestamp) {
 function animateGraphs(timestamp) {
     for (var graph of graphs) {
         if (graph.animDone) continue;
-        var elapsed = timestamp - graph.lastRenderUpdate;
-        var pointsPerSec = graph.totalPoints / defaultAnimTime;
-        var pointsInFrame = pointsPerSec * (elapsed / 1000);
+        var totalPoints = graph.allPoints.length;
 
-        if (pointsInFrame < 1) continue;
+        var elapsedSeconds = (timestamp - graph.animStart) / 1000;
+        var percentage = elapsedSeconds / defaultAnimTime;
+        var renderedPoints = totalPoints * percentage;
 
-        var removedPoints = graph.unusedPoints.splice(0, pointsInFrame);
-        graph.renderPoints.push(...removedPoints);
-        if (graph.unusedPoints.length == 0) {
-            graph.animDone = true;
-        }
-
-        graph.lastRenderUpdate = timestamp;
+        graph.renderPoints = graph.allPoints.slice(0, renderedPoints);
+        if (renderedPoints >= totalPoints.length) graph.animDone = true;
     }
 }
 
 function addGraph(func) {
-    var node = math.parse(func);
-    var f = node.compile();
+    var f;
+    try {
+        var node = parseTex(func);
+        f = node.compile();
+    } catch {
+        return;
+    }
 
     const sf = scaleRate / panZoom.scale; // sf stands for scale factor
 
@@ -315,10 +317,9 @@ function addGraph(func) {
     var obj = {
         func,
         color: colors[Math.floor(Math.random() * colors.length)],
-        totalPoints: allPoints.length,
-        unusedPoints: allPoints,
+        allPoints: allPoints,
         renderPoints: [],
-        lastRenderUpdate: performance.now(),
+        animStart: performance.now(),
         animDone: false,
     }
 
@@ -329,5 +330,17 @@ function formatLabel(num) {
     return Math.round(num * 100) / 100;
 }
 
-addGraph("3cos(2x)");
-addGraph("2sin(3x)");
+addGraph(String.raw`3\cos\left(2x\right)`);
+addGraph(String.raw`2\sin\left(3x\right)`);
+
+var span = document.getElementById("equation-1");
+
+var MQ = MathQuill.getInterface(2);
+var mathField = MQ.MathField(span, {
+    spaceBehavesLikeTab: true,
+    handlers: {
+        edit: () => {
+            console.log(mathField.latex());
+        }
+    }
+})
