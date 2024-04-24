@@ -13,11 +13,40 @@ body {
     left: 0px;
 }
 
-div {
+#equations {
     position: absolute;
-    top: 5px;
-    left: 5px;
+    top: 0px;
+    left: 0px;
     font-family: "Inter-Regular";
     font-size: 16px;
     background: #FFFD;
+    width: 20%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    opacity: 80%;
+    overflow-y: scroll;
+}
+
+.equation {
+    margin: 10px;
+    height: 28px;
+    display: flex;
+    flex-direction: row;
+}
+
+.equation .r {
+    font-family: "Times New Roman", "Symbola", serif;
+    font-style: italic;
+    flex-shrink: 0;
+    margin: auto;
+}
+
+.equation .mathinput {
+    width: 90%;
+    margin-left: 5px;
+}
+
+.equation.half-reveal {
+    opacity: 50%;
 }

@@ -11,22 +11,22 @@ const defaultAnimTime = 10; // seconds to finish drawing a graph
 
 const colors = ["red", "green", "blue", "orange", "purple", "magenta", "darkred", "#00bbff", "#0d0", "#a39e00"]
 
+const equationsContainer = document.getElementById("equations");
 const canvas = document.getElementById("graph");
 const ctx = canvas.getContext("2d");
 const font = new FontFace("Inter-Regular", "url(assets/Inter-Regular.ttf)");
 font.load().then(f => document.fonts.add(f));
 
-requestAnimationFrame(update);
 const mouse = { x: 0, y: 0, button: false, wheel: 0, lastX: 0, lastY: 0, drag: false };
 const defaultGridSize = 128;  // grid size in screen pixels for adaptive and world pixels for static
 const scaleRate = 1.02; // Closer to 1: slower rate of change, less than 1: inverts scaling change and same rule
 const minScale = 0.012;
 const maxScale = 200;
 
-const points = [[1, Math.PI / 2]];
 const graphs = [];
 
 function mouseEvents(e) {
+    if (!canvas.matches("#graph:hover")) return;
     const bounds = canvas.getBoundingClientRect();
     mouse.x = e.pageX - bounds.left - scrollX;
     mouse.y = e.pageY - bounds.top - scrollY;
@@ -95,8 +95,8 @@ function drawGrid() {
         var xi = x + i;
         var yi = y + i;
 
-        var newX = formatLabel(Math.abs(xi / defaultGridSize));
-        var newY = formatLabel(Math.abs(yi / defaultGridSize));
+        var newX = Math.round(Math.abs(xi / defaultGridSize) * 100) / 100;
+        var newY = Math.round(Math.abs(yi / defaultGridSize) * 100) / 100;
         var yMetrics = ctx.measureText(newY);
         
         // vertical lines with fixed gap for x labels
@@ -196,18 +196,18 @@ function drawGrid() {
 
 
     // draw points
-    panZoom.apply();
-    for (const point of points) {
-        var p = panZoom.polarToRect(point);
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], defaultPointRadius * sf, 0, 2 * Math.PI);
-        ctx.fill();
+    // panZoom.apply();
+    // for (const point of points) {
+    //     var p = panZoom.polarToRect(point);
+    //     ctx.beginPath();
+    //     ctx.arc(p[0], p[1], defaultPointRadius * sf, 0, 2 * Math.PI);
+    //     ctx.fill();
 
-        ctx.closePath();
-    }
+    //     ctx.closePath();
+    // }
 
     ctx.lineWidth = 3.25;
-    for (const graph of graphs) {
+    graphs.forEach((graph) => {
         panZoom.apply();
         ctx.strokeStyle = graph.color;
         ctx.beginPath();
@@ -236,7 +236,7 @@ function drawGrid() {
             ctx.moveTo(p1[0], p1[1]);
             ctx.lineTo(p2[0], p2[1]);
         }
-    }
+    });
 }
 
 var w = canvas.width;
@@ -283,8 +283,8 @@ function update(timestamp) {
 }
 
 function animateGraphs(timestamp) {
-    for (var graph of graphs) {
-        if (graph.animDone) continue;
+    graphs.forEach((graph) => {
+        if (graph.animDone) return;
         var totalPoints = graph.allPoints.length;
 
         var elapsedSeconds = (timestamp - graph.animStart) / 1000;
@@ -292,11 +292,11 @@ function animateGraphs(timestamp) {
         var renderedPoints = totalPoints * percentage;
 
         graph.renderPoints = graph.allPoints.slice(0, renderedPoints);
-        if (renderedPoints >= totalPoints.length) graph.animDone = true;
-    }
+        if (renderedPoints >= totalPoints) graph.animDone = true;
+    });
 }
 
-function addGraph(func) {
+function addGraph(id, func) {
     var f;
     try {
         var node = parseTex(func);
@@ -310,13 +310,19 @@ function addGraph(func) {
     const allPoints = [];
     var maxInput = (defaultDomainEnd + (defaultStep * sf));
     for (let angle = defaultDomainStart; angle <= maxInput; angle += defaultStep * sf) {
-        var p = panZoom.polarToRect([f.evaluate({ x: angle }), angle]);
-        allPoints.push(p);
+        var r;
+        try {
+            r = f.evaluate({ x: angle });
+        } catch {
+            return;
+        }
+        allPoints.push(panZoom.polarToRect([r, angle]));
     }
 
     var obj = {
+        id,
         func,
-        color: colors[Math.floor(Math.random() * colors.length)],
+        color: randomColor(),
         allPoints: allPoints,
         renderPoints: [],
         animStart: performance.now(),
@@ -326,21 +332,87 @@ function addGraph(func) {
     graphs.push(obj);
 }
 
-function formatLabel(num) {
-    return Math.round(num * 100) / 100;
+function randomColor() {
+    const c = () => colors[Math.floor(Math.random() * colors.length)];
+
+    var color = c();
+    while (graphs.find(g => g.color == color)) {
+        color = c();
+    }
+    return color;
 }
 
-addGraph(String.raw`3\cos\left(2x\right)`);
-addGraph(String.raw`2\sin\left(3x\right)`);
+function uid() {
+    return Date.now().toString(36) + Math.floor(Math.pow(10, 12) + Math.random() * 9*Math.pow(10, 12)).toString(36);
+}
 
-var span = document.getElementById("equation-1");
+function addInputField(halfReveal, referenceElem) {
+    const id = uid();
 
-var MQ = MathQuill.getInterface(2);
-var mathField = MQ.MathField(span, {
-    spaceBehavesLikeTab: true,
-    handlers: {
-        edit: () => {
-            console.log(mathField.latex());
+    const div = document.createElement("div");
+    div.id = id;
+    div.classList.add("equation");
+    if (halfReveal) div.classList.add("half-reveal");
+
+    const rSpan = document.createElement("span");
+    rSpan.classList.add("r");
+    rSpan.innerHTML = "r ="
+
+    const inputSpan = document.createElement("span");
+    inputSpan.classList.add("mathinput");
+    inputSpan.id = id;
+
+    div.appendChild(rSpan);
+    div.appendChild(inputSpan);
+
+    if (referenceElem) equationsContainer.insertBefore(div, referenceElem.nextSibling);
+    else equationsContainer.appendChild(div);
+
+    if (halfReveal) {
+        const onclick = () => {
+            div.classList.remove("half-reveal");
+            addInputField(halfReveal);
+            div.removeEventListener("click", onclick);
         }
+        div.addEventListener("click", onclick);
     }
-})
+
+    var MQ = MathQuill.getInterface(2);
+    var mathField = MQ.MathField(inputSpan, {
+        spaceBehavesLikeTab: true,
+        handlers: {
+            edit: () => {
+                const raw = String.raw`${mathField.latex()}`
+                let i = 0;
+                const graph = graphs.find(g => {
+                    if (g.id == id) return true;
+                    i++;
+                    return false;
+                })
+                if (i < graphs.length) graphs.splice(i, 1);
+                if (equationsContainer.childNodes.length > 2) {
+                    if (!graph) {
+                        if (raw == "") { // backspace was pressed
+                            div.remove();
+                            return;
+                        }
+                    } else if (graph.func == "" && raw == "") {
+                        div.remove();
+                        return;
+                    }
+                }
+                if (raw != "") addGraph(id, raw);
+            },
+            enter: () => {
+                addInputField(false, div);
+            }
+        }
+    });
+
+    if (!halfReveal) mathField.focus();
+}
+
+addInputField();
+addInputField(true);
+
+window.requestAnimationFrame(update);
