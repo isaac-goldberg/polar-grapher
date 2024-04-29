@@ -1,16 +1,19 @@
 // grid panning/zooming based on: https://stackoverflow.com/a/53329817/16158590
 
 import { parseTex } from "./libraries/latex2math/index.js"
+const MQ = MathQuill.getInterface(2);
 
 const defaultLabelFontSize = 24;
-const defaultPointRadius = 5;
+const defaultPointRadius = 7;
 const defaultDomainStart = 0;
 const defaultDomainEnd = 2 * Math.PI;
-const defaultStep = 0.01;
-const defaultAnimTime = 10; // seconds to finish drawing a graph
+const defaultSteps = 1000;
+const defaultAnimTime = 1.5; // seconds to finish drawing a graph
 
-const colors = ["red", "green", "blue", "orange", "purple", "magenta", "darkred", "#00bbff", "#0d0", "#a39e00"]
+const colors = ["#f00", "#008000", "#00f", "#FFA500", "#990299", "#f0f", "#8B0000", "#00bbff", "#0d0", "#a39e00"]
 
+const tooltip = document.getElementById("coords-tooltip");
+const tooltipDummy = document.getElementById("coords-tooltip-dummy");
 const equationsContainer = document.getElementById("equations");
 const canvas = document.getElementById("graph");
 const ctx = canvas.getContext("2d");
@@ -23,7 +26,56 @@ const scaleRate = 1.02; // Closer to 1: slower rate of change, less than 1: inve
 const minScale = 0.012;
 const maxScale = 200;
 
+var pointCursor = false;
 const graphs = [];
+const mathFields = new Map(); // used for tracking the content of math fields
+
+function pointDist(p1, p2) {
+    return Math.sqrt(((p2[0] - p1[0]) ** 2) + ((p2[1] - p1[1]) ** 2));
+}
+
+const distBuffer = 28;
+function pointsTooltip() {
+    const sf = panZoom.sf();
+
+    var mPos = panZoom.windowToCanvas(mouse.x, mouse.y);
+    // console.log("start:", [mouse.x, mouse.y], "canvas:", mPos, "window:", panZoom.canvasToWindow(mPos[0], mPos[1]));
+
+    console.log(mPos)
+    var closestPoint = false;
+    var closestDist = Infinity;
+    var color;
+    var equalPoints = [];
+    for (const graph of graphs) {
+        if (!graph.animDone) continue;
+        var possiblePoints = [];
+        for (const point of graph.renderPoints) {
+            if (Math.abs(point[0] - mPos[0]) <= distBuffer * sf && Math.abs(point[1] - mPos[1]) <= distBuffer * sf) {
+                possiblePoints.push(point);
+
+                let dist = pointDist(point, mPos);
+                if (dist < closestDist) {
+                    closestPoint = point;
+                    closestDist = dist;
+                    color = graph.color;
+                    equalPoints = [];
+                    equalPoints.push([closestPoint[2].toPrecision(3), closestPoint[3].toPrecision(3)]);
+                } else if (dist == closestDist) {
+                    equalPoints.push([point[2], point[3]]);
+                }
+            }
+        }
+    }
+
+    var toWindow = panZoom.canvasToWindow(closestPoint[0], closestPoint[1]);
+    pointCursor = closestPoint ? {
+        x: closestPoint[0],
+        y: -closestPoint[1],
+        toWindow,
+        color,
+        equalPoints,
+    } : false;
+}
 
 function mouseEvents(e) {
     if (!canvas.matches("#graph:hover")) return;
@@ -36,6 +88,7 @@ function mouseEvents(e) {
         mouse.wheel += -e.deltaY;
         e.preventDefault();
     }
+    pointsTooltip();
 }
 ["mousedown", "mouseup", "mousemove"].forEach(name => document.addEventListener(name, mouseEvents));
 document.addEventListener("wheel", mouseEvents, { passive: false });
@@ -59,10 +112,11 @@ const panZoom = {
         this.x = x - (x - this.x) * sc;
         this.y = y - (y - this.y) * sc;
     },
+    sf() { // sf stands for scale factor
+        return scaleRate / this.scale;
+    },
     polarToRect(...args) {
-        function f(x, y) {
-            return [x * Math.cos(y) * defaultGridSize, x * Math.sin(y) * -defaultGridSize];
-        }
+        const f = (x, y) => [x * Math.cos(y) * defaultGridSize, x * Math.sin(y) * -defaultGridSize];
         if (args.length == 1) return f(args[0][0], args[0][1]);
         else return f(args[0], args[1]);
     },
@@ -70,6 +124,35 @@ const panZoom = {
         var x = this.x - getWindowPoleX();
         var y = this.y - getWindowPoleY();
         return Math.sqrt((x ** 2) + (y ** 2));
+    },
+    windowToCanvas(x, y) { // converts a coordinate in the window to the grid canvas
+        var sf = panZoom.sf();
+        console.log(sf)
+        var ratio = window.devicePixelRatio;
+
+        var poleX = getWindowPoleX();
+        var poleY = getWindowPoleY();
+        var centerX = -(this.x - poleX);
+        var centerY = this.y - poleY; // (centerX, centerY) is where screen is centered about
+
+        var pointX = x - (window.innerWidth / 2);
+        var pointY = -(y - (window.innerHeight / 2));
+
+        return [(centerX + (pointX * ratio)) * sf, (centerY + (pointY * ratio)) * sf];
+    },
+    canvasToWindow(x, y) { // inverse of the windowToCanvas function
+        var sf = panZoom.sf();
+        var ratio = window.devicePixelRatio;
+
+        var poleX = getWindowPoleX();
+        var poleY = getWindowPoleY();
+        var centerX = -(this.x - poleX);
+        var centerY = this.y - poleY;
+
+        var invertedX = ((x / sf) - centerX) / ratio;
+        var invertedY = ((y / sf) - centerY) / ratio;
+
+        return [invertedX + (window.innerWidth / 2), -invertedY + (window.innerHeight / 2)];
     }
 }
 function drawGrid() {
@@ -80,7 +163,7 @@ function drawGrid() {
     x = ((-panZoom.x * scale - gridScale) / gridScale | 0) * gridScale;
     y = ((-panZoom.y * scale - gridScale) / gridScale | 0) * gridScale;
 
-    const sf = scaleRate / panZoom.scale; // sf stands for scale factor
+    const sf = panZoom.sf(); // sf stands for scale factor
     
     // ------------------------------------------------------
     // MAIN GRID LINES
@@ -193,19 +276,6 @@ function drawGrid() {
     ctx.closePath();
     // ------------------------------------------------------
 
-
-
-    // draw points
-    // panZoom.apply();
-    // for (const point of points) {
-    //     var p = panZoom.polarToRect(point);
-    //     ctx.beginPath();
-    //     ctx.arc(p[0], p[1], defaultPointRadius * sf, 0, 2 * Math.PI);
-    //     ctx.fill();
-
-    //     ctx.closePath();
-    // }
-
     ctx.lineWidth = 3.25;
     graphs.forEach((graph) => {
         panZoom.apply();
@@ -213,6 +283,7 @@ function drawGrid() {
         ctx.beginPath();
         for (let i = 0; i < graph.renderPoints.length; i++) {
             var p1 = graph.renderPoints[i];
+            if (p1 == "asymptote") continue;
 
             // if this is the last point on the curve
             if (i == graph.renderPoints.length - 1) {
@@ -233,10 +304,57 @@ function drawGrid() {
             }
 
             var p2 = graph.renderPoints[i + 1];
+            if (p2 == "asymptote") continue;
             ctx.moveTo(p1[0], p1[1]);
             ctx.lineTo(p2[0], p2[1]);
         }
     });
+
+    // ------------------------------------------------------
+    // IF MOUSE IS HOVERING OVER A CURVE
+    // ------------------------------------------------------
+    if (pointCursor) {
+        var html = `<p>${pointCursor.equalPoints[0][0]}, ${pointCursor.equalPoints[0][1]}</p>`
+
+        tooltipDummy.innerHTML = html;
+
+        var width = tooltipDummy.clientWidth;
+        var height = tooltipDummy.clientHeight;
+        var newX = pointCursor.toWindow[0] - (width / 2);
+        var newY = pointCursor.toWindow[1] - 50;
+        $(tooltip).css({
+            opacity: 1,
+            left: newX,
+            top: newY,
+            width,
+            height,
+        });
+        tooltip.innerHTML = html;
+        
+        // cursor point on curve
+        panZoom.apply();
+        ctx.fillStyle = pointCursor.color;
+        ctx.beginPath();
+        ctx.arc(pointCursor.x, pointCursor.y, defaultPointRadius * sf, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.closePath();
+
+        // ctx.fillStyle = "#000"
+        // ctx.fillRect(pointCursor.x - (75 * sf), pointCursor.y - (50 * sf), 150 * sf, 40 * sf);
+
+        // ctx.fillStyle = "#fff"
+        // ctx.textAlign = "center"
+        // let i = 0;
+        // for (const point of pointCursor.equalPoints) {
+        //     ctx.fillText(`(${point[0]}, ${point[1]})`, pointCursor.x, pointCursor.y - (28 * sf) - (i * 15 * sf));
+        //     i++;
+        // }
+
+        
+    } else {
+        tooltip.style.opacity = 0;
+    }
+    // ------------------------------------------------------
 }
 
 var w = canvas.width;
@@ -296,40 +414,51 @@ function animateGraphs(timestamp) {
     });
 }
 
-function addGraph(id, func) {
+function addGraph(id, func, color) {
     var f;
     try {
         var node = parseTex(func);
         f = node.compile();
-    } catch {
-        return;
+    } catch (e) {
+        // console.error(e);
+        return false;
     }
 
-    const sf = scaleRate / panZoom.scale; // sf stands for scale factor
+    const sf = panZoom.sf(); // sf stands for scale factor
 
+    var step = (defaultDomainEnd - defaultDomainStart) / defaultSteps * sf;
     const allPoints = [];
-    var maxInput = (defaultDomainEnd + (defaultStep * sf));
-    for (let angle = defaultDomainStart; angle <= maxInput; angle += defaultStep * sf) {
+    let lastR;
+    for (let angle = defaultDomainStart; angle <= defaultDomainEnd; angle += step) {
         var r;
         try {
             r = f.evaluate({ x: angle });
-        } catch {
-            return;
+        } catch (e) {
+            // console.error(e);
+            return false;
         }
-        allPoints.push(panZoom.polarToRect([r, angle]));
+        var p = panZoom.polarToRect([r, angle]);
+
+        // primitive asymptote detection
+        if (r < 0 && lastR > 0 && Math.abs(r) > lastR) allPoints.push("asymptote");
+        else if (r > 0 && lastR < 0 && r > Math.abs(lastR)) allPoints.push("asymptote");
+        lastR = r;
+
+        allPoints.push([...p, r, angle]);
     }
 
     var obj = {
         id,
         func,
-        color: randomColor(),
-        allPoints: allPoints,
+        color,
+        allPoints,
         renderPoints: [],
         animStart: performance.now(),
         animDone: false,
     }
 
     graphs.push(obj);
+    return obj;
 }
 
 function randomColor() {
@@ -349,8 +478,10 @@ function uid() {
 function addInputField(halfReveal, referenceElem) {
     const id = uid();
 
+    mathFields.set(id, "");
+
     const div = document.createElement("div");
-    div.id = id;
+    div.id = id + "-container";
     div.classList.add("equation");
     if (halfReveal) div.classList.add("half-reveal");
 
@@ -360,7 +491,7 @@ function addInputField(halfReveal, referenceElem) {
 
     const inputSpan = document.createElement("span");
     inputSpan.classList.add("mathinput");
-    inputSpan.id = id;
+    inputSpan.id = id + "-span";
 
     div.appendChild(rSpan);
     div.appendChild(inputSpan);
@@ -368,42 +499,122 @@ function addInputField(halfReveal, referenceElem) {
     if (referenceElem) equationsContainer.insertBefore(div, referenceElem.nextSibling);
     else equationsContainer.appendChild(div);
 
+    function unreveal() {
+        div.classList.remove("half-reveal");
+        addInputField(true);
+    }
+    
     if (halfReveal) {
         const onclick = () => {
-            div.classList.remove("half-reveal");
-            addInputField(halfReveal);
+            if (!div.classList.contains("half-reveal")) return;
+            unreveal();
             div.removeEventListener("click", onclick);
         }
         div.addEventListener("click", onclick);
     }
 
-    var MQ = MathQuill.getInterface(2);
+    const formatUpdateDelay = 4000;
+    var lastTimeoutId;
+    var lastInputTime = 0;
+    
     var mathField = MQ.MathField(inputSpan, {
         spaceBehavesLikeTab: true,
         handlers: {
             edit: () => {
-                const raw = String.raw`${mathField.latex()}`
+                if (div.classList.contains("half-reveal")) unreveal();
+                var oldFieldValue = mathFields.get(id);
+                var raw = String.raw`${mathField.latex()}`
+
+                // console.log("edit called", raw)
+
+                // function cursorBack() {
+                //     var customKeyDownEvent = $.Event('keydown');
+
+                //     // 37 for left arrow key, 39 for right arrow key
+                //     customKeyDownEvent.bubbles = true;
+                //     customKeyDownEvent.cancelable = true;
+                //     customKeyDownEvent.charCode = 37;
+                //     customKeyDownEvent.keyCode = 37;   
+                //     customKeyDownEvent.which = 37;
+
+                //     $(`#${id}-span textarea`).trigger(customKeyDownEvent);
+                // }
+
+                function formatUpdate() {
+                    var newLatex = raw.replace(/(?<!\\)pi/gmi, String.raw`\pi`).replace(/\s?x/gmi, "θ");
+                    if (newLatex == oldFieldValue) return;
+                    mathFields.set(id, newLatex);
+                    mathField.latex(newLatex);
+                }
+
+                lastInputTime = performance.now();
+                if (lastTimeoutId) clearTimeout(lastTimeoutId);
+                lastTimeoutId = setTimeout(() => {
+                    if (performance.now() - lastInputTime < formatUpdateDelay) return;
+                    formatUpdate();
+                }, formatUpdateDelay)
+
+                // if (raw.length > oldFieldValue.length || (raw.length == oldFieldValue.length && raw != oldFieldValue)) {
+                    // if (/(?<!\\)pi/gmi.exec(raw) != null) {
+                    //     mathField.latex(raw.replace(/(?<!\\)pi/gmi, String.raw`\pi`));
+                    //     if (!mathField.latex().endsWith("pi")) cursorBack();
+                    // } else if (/cos$/gmi.exec(raw) != null || /sin$/gmi.exec(raw) != null) {
+                    //     mathField.cmd("(");
+                    // } else if (/(?<!\\)sqrt$/gmi.exec(raw) != null) {
+                    //     mathField.latex(String.raw`${raw.slice(0, -4)}\sqrt{ }`);
+                    //     cursorBack();
+                    // } else if (raw.includes("x")) {
+                    //     mathField.latex(raw.replace(/x/gm, "θ"));
+                    //     if (!mathField.latex().endsWith("θ")) cursorBack();
+                    // }
+
+                    // raw = mathField.latex();
+                // }
+
+                // deletes the current math field and focuses the previous one
+                function deleteField() {
+                    const previousField = div.previousSibling.querySelector(".mathinput");
+                    div.remove();
+                    if (previousField) {
+                        const previousMathField = MQ(previousField);
+                        previousMathField.focus();
+                    }
+                    mathFields.delete(id);
+                }
+
+                if (equationsContainer.childNodes.length > 2) {
+                    // check if backspace was pressed when field was empty
+                    if (oldFieldValue == "" && raw == "") return deleteField();
+                }
+                
+                if (oldFieldValue == raw && graphs.find(g => g.id == id)) return;
+
                 let i = 0;
-                const graph = graphs.find(g => {
+                graphs.find(g => {
                     if (g.id == id) return true;
                     i++;
                     return false;
-                })
+                });
+
+                // if this math field is being graphed, delete it
                 if (i < graphs.length) graphs.splice(i, 1);
-                if (equationsContainer.childNodes.length > 2) {
-                    if (!graph) {
-                        if (raw == "") { // backspace was pressed
-                            div.remove();
-                            return;
-                        }
-                    } else if (graph.func == "" && raw == "") {
-                        div.remove();
-                        return;
-                    }
+
+                mathFields.set(id, raw);
+                var jSpan = $(`#${inputSpan.id}`);
+                if (raw != "") {
+                    var color = jSpan.css("--color");
+                    if (!color) color = randomColor();
+                    addGraph(id, raw.replace(/\\theta/gmi, " x").replace(/θ/gmi, " x"), color);
+
+                    jSpan.css("border-color", color);
+                    jSpan.css("--color", color);
+                } else {
+                    jSpan.css("border-color", "");
+                    jSpan.css("--color", "");
                 }
-                if (raw != "") addGraph(id, raw);
             },
             enter: () => {
+                // enter key pressed
                 addInputField(false, div);
             }
         }
