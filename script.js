@@ -4,7 +4,7 @@ import { parseTex } from "./libraries/latex2math/index.js"
 const MQ = MathQuill.getInterface(2);
 
 const defaultLabelFontSize = 24;
-const defaultPointRadius = 7;
+const defaultPointRadius = 9;
 const defaultDomainStart = 0;
 const defaultDomainEnd = 2 * Math.PI;
 const defaultSteps = 1000;
@@ -18,6 +18,7 @@ const criticalAngles = [
     },
     {
         value: Math.PI / 2,
+        denominator: 2,
         axis: true,
     },
     {
@@ -26,43 +27,66 @@ const criticalAngles = [
     },
     {
         value: 3 * Math.PI / 2,
+        numerator: 3,
+        denominator: 2,
         axis: true,
     },
     {
         value: Math.PI / 6,
+        denominator: 6,
     },
     {
         value: Math.PI / 4,
+        denominator: 4,
     },
     {
         value: Math.PI / 3,
+        denominator: 3,
     },
     {
         value: 2 * Math.PI / 3,
+        numerator: 2,
+        denominator: 3,
     },
     {
         value: 3 * Math.PI / 4,
+        numerator: 3,
+        denominator: 4,
     },
     {
         value: 5 * Math.PI / 6,
+        numerator: 5,
+        denominator: 6,
     },
     {
         value: 7 * Math.PI / 6,
+        numerator: 7,
+        denominator: 6,
     },
     {
         value: 5 * Math.PI / 4,
+        numerator: 5,
+        denominator: 4,
     },
     {
         value: 4 * Math.PI / 3,
+        numerator: 4,
+        denominator: 3,
     },
     {
         value: 5 * Math.PI / 3,
+        numerator: 5,
+        denominator: 3,
     },
     {
         value: 7 * Math.PI / 4,
+        numerator: 7,
+        denominator: 4,
     },
     {
         value: 11 * Math.PI / 6,
+        numerator: 11,
+        denominator: 6,
     }
 ]
 
@@ -90,7 +114,7 @@ function pointDist(p1, p2) {
 
 const distBuffer = 28;
 const critAngleBuffer = 50;
-function pointsTooltip() {
+function pointTooltip() {
     const sf = panZoom.sf();
 
     var mPos = panZoom.windowToCanvas(mouse.x, mouse.y); // stands for mouse position
@@ -98,16 +122,17 @@ function pointsTooltip() {
     // var mAngle = Math.atan2(mPos[1], mPos[0]); // stands for mouse angle
     // if (mAngle < 0) mAngle += 2 * Math.PI;
 
+    var color;
+    var criticalAngleData = false;
     var closestPoint = false;
     var closestDist = Infinity;
-    var color;
     var closestPoints = [];
     for (const graph of graphs) {
         if (!graph.animDone) continue;
 
         var possiblePoints = [];
 
-        function validatePoint(point, buffer) {
+        function validatePoint(point, buffer, critData) {
             if (pointDist(point, mPos) <= buffer * sf) {
                 possiblePoints.push(point);
 
@@ -117,13 +142,24 @@ function pointsTooltip() {
                     closestDist = dist;
                     color = graph.color;
                     closestPoints = [];
-                    closestPoints.push([closestPoint[0], closestPoint[1], closestPoint[2].toPrecision(3), closestPoint[3].toPrecision(3)]);
+                    if (!critData) {
+                        closestPoints.push([closestPoint[0], closestPoint[1], closestPoint[2].toPrecision(3), closestPoint[3].toPrecision(3)]);
+                    } else {
+                        closestPoints.push([closestPoint[0], closestPoint[1], critData.r.toPrecision(3), critData.angle.toPrecision(3)]);
+                    }
+                }
+                if (critData) {
+                    criticalAngleData = {
+                        value: critData.value,
+                        numerator: critData.numerator,
+                        denominator: critData.denominator,
+                    }
                 }
             }
         }
 
         for (const point of graph.criticalPoints) {
-            validatePoint(point, critAngleBuffer);
+            validatePoint(point.p, critAngleBuffer, point);
         }
 
         if (!closestPoint) {
@@ -161,6 +197,7 @@ function pointsTooltip() {
         toWindow,
         color,
         closestPoints,
+        criticalAngleData,
     } : false;
 }
 
@@ -175,7 +212,7 @@ function mouseEvents(e) {
         mouse.wheel += -e.deltaY;
         e.preventDefault();
     }
-    pointsTooltip();
+    pointTooltip();
 }
 ["mousedown", "mouseup", "mousemove"].forEach(name => document.addEventListener(name, mouseEvents));
 document.addEventListener("wheel", mouseEvents, { passive: false });
@@ -267,10 +304,10 @@ function drawGrid() {
 
         var newX = Math.round(Math.abs(xi / defaultGridSize) * 100) / 100;
         var newY = Math.round(Math.abs(yi / defaultGridSize) * 100) / 100;
-        // var yMetrics = ctx.measureText(newY);
         
         // deprecated
-        // vertical lines with fixed gap for x labels
+        // var yMetrics = ctx.measureText(newY);
+        // // vertical lines with fixed gap for x labels
         // ctx.moveTo(xi, y);
         // ctx.lineTo(xi, 5 * sf);
         // ctx.moveTo(xi, 25 * sf);
@@ -430,22 +467,64 @@ function drawGrid() {
     // IF MOUSE IS HOVERING OVER A CURVE
     // ------------------------------------------------------
     if (pointCursor) {
-        var html = `<p>${pointCursor.closestPoints[0][2]}, ${pointCursor.closestPoints[0][3]}</p>`
+        var div = document.createElement("div");
 
-        tooltipDummy.innerHTML = html;
+        var spanElem = document.createElement("span");
+        var r;
+        if (pointCursor.criticalAngleData) {
+            if (pointCursor.criticalAngleData.value == 0) r = "0"
+            else r = ""
+        } else r = pointCursor.closestPoints[0][3];
+        spanElem.innerHTML = `${pointCursor.closestPoints[0][2]}, ${r}`
+        div.appendChild(spanElem);
+
+        if (pointCursor.criticalAngleData && r == "") {
+            var mathElem = document.createElement("span");
+            mathElem.classList.add("math-span");
+            if (!pointCursor.criticalAngleData.denominator) {
+                tooltipDummy.classList.remove("with-denominator");
+                tooltip.classList.remove("with-denominator");
+                mathElem.innerHTML = String.raw`${pointCursor.criticalAngleData.numerator || ""}\pi`
+            } else {
+                tooltipDummy.classList.add("with-denominator");
+                tooltip.classList.add("with-denominator");
+                mathElem.innerHTML = String.raw`\frac{${pointCursor.criticalAngleData.numerator || ""}\pi}{${pointCursor.criticalAngleData.denominator}}`
+            }
+            MQ.StaticMath(mathElem);
+            div.appendChild(mathElem);
+
+            tooltipDummy.classList.add("with-math");
+            tooltip.classList.add("with-math");
+        } else {
+            tooltipDummy.classList.remove("with-math");
+            tooltip.classList.remove("with-math");
+            tooltipDummy.classList.remove("with-denominator");
+            tooltip.classList.remove("with-denominator");
+        }
+
+        tooltipDummy.replaceChildren(div);
 
         var width = tooltipDummy.clientWidth;
         var height = tooltipDummy.clientHeight;
+
         var newX = pointCursor.toWindow[0] - (width / 2);
-        var newY = pointCursor.toWindow[1] - 40;
+        if (newX + width + 10 >= window.innerWidth) newX -= (newX + width + 10) - window.innerWidth;
+        if (newX - 10 <= 0) newX = 10;
+
+        var newY;
+        var yStart = pointCursor.toWindow[1];
+        var yDiff = (15 + height + 3);
+        if (yStart - yDiff >= 0) newY = yStart - yDiff;
+        else newY = yStart + 15;
+
         $(tooltip).css({
-            opacity: 1,
+            opacity: 0.85,
             left: newX,
             top: newY,
             width,
             height,
         });
-        tooltip.innerHTML = html;
+        tooltip.replaceChildren(div);
         
         // cursor point on curve
         panZoom.apply();
@@ -572,7 +651,14 @@ function addGraph(id, func, color) {
         var r = evalMath(f, angle);
         if (!r) continue;
         var p = panZoom.polarToRect([r, angle]);
-        criticalPoints.push([...p, r, angle]);
+        criticalPoints.push({
+            p,
+            r,
+            angle,
+            value: critAngle.value,
+            numerator: critAngle.numerator,
+            denominator: critAngle.denominator,
+        });
     }
 
     var obj = {

@@ -61,16 +61,28 @@ body {
 .coords-tooltip {
     position: absolute;
     opacity: 0;
-    transition: 0.2s ease, top 0.05s linear, left 0.05s linear;
     background-color: #000;
     border-radius: 15px;
     pointer-events: none;
+    padding: 2px 4px;
+    display: flex;
 }
 
-.coords-tooltip p {
+.coords-tooltip.with-math {
+    padding: 3px 4px 0 !important;
+}
+
+.coords-tooltip.with-denominator {
+    padding: 5px 4px 0 !important;
+}
+
+.coords-tooltip div {
     font-family: "Inter-Regular";
     color: #fff;
-    margin: 5px 10px;
+    margin: auto;
     text-align: center;
-    white-space: nowrap;
+}
+
+.coords-tooltip.with-math div .math-span {
+    transform: translateY(-2px);
 }
