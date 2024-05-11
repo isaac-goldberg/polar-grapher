@@ -11,6 +11,60 @@ const defaultSteps = 1000;
 const defaultAnimTime = 1.5; // seconds to finish drawing a graph
 
 const colors = ["#f00", "#008000", "#00f", "#FFA500", "#990299", "#f0f", "#8B0000", "#00bbff", "#0d0", "#a39e00"]
+const criticalAngles = [
+    {
+        value: 0,
+        axis: true,
+    },
+    {
+        value: Math.PI / 2,
+        axis: true,
+    },
+    {
+        value: Math.PI,
+        axis: true,
+    },
+    {
+        value: 3 * Math.PI / 2,
+        axis: true,
+    },
+    {
+        value: Math.PI / 6,
+    },
+    {
+        value: Math.PI / 4,
+    },
+    {
+        value: Math.PI / 3,
+    },
+    {
+        value: 2 * Math.PI / 3,
+    },
+    {
+        value: 3 * Math.PI / 4,
+    },
+    {
+        value: 5 * Math.PI / 6,
+    },
+    {
+        value: 7 * Math.PI / 6,
+    },
+    {
+        value: 5 * Math.PI / 4,
+    },
+    {
+        value: 4 * Math.PI / 3,
+    },
+    {
+        value: 5 * Math.PI / 3,
+    },
+    {
+        value: 7 * Math.PI / 4,
+    },
+    {
+        value: 11 * Math.PI / 6,
+    }
+]
 
 const tooltip = document.getElementById("coords-tooltip");
 const tooltipDummy = document.getElementById("coords-tooltip-dummy");
@@ -35,22 +89,26 @@ function pointDist(p1, p2) {
 }
 
 const distBuffer = 28;
+const critAngleBuffer = 50;
 function pointsTooltip() {
     const sf = panZoom.sf();
 
-    var mPos = panZoom.windowToCanvas(mouse.x, mouse.y);
-    // console.log("start:", [mouse.x, mouse.y], "canvas:", mPos, "window:", panZoom.canvasToWindow(mPos[0], mPos[1]));
+    var mPos = panZoom.windowToCanvas(mouse.x, mouse.y); // stands for mouse position
+    // var mr = pointDist([0, 0], mPos) * sf;
+    // var mAngle = Math.atan2(mPos[1], mPos[0]); // stands for mouse angle
+    // if (mAngle < 0) mAngle += 2 * Math.PI;
 
-    console.log(mPos)
     var closestPoint = false;
     var closestDist = Infinity;
     var color;
-    var equalPoints = [];
+    var closestPoints = [];
     for (const graph of graphs) {
         if (!graph.animDone) continue;
+
         var possiblePoints = [];
-        for (const point of graph.renderPoints) {
-            if (Math.abs(point[0] - mPos[0]) <= distBuffer * sf && Math.abs(point[1] - mPos[1]) <= distBuffer * sf) {
+
+        function validatePoint(point, buffer) {
+            if (pointDist(point, mPos) <= buffer * sf) {
                 possiblePoints.push(point);
 
                 let dist = pointDist(point, mPos);
@@ -58,22 +116,51 @@ function pointsTooltip() {
                     closestPoint = point;
                     closestDist = dist;
                     color = graph.color;
-                    equalPoints = [];
-                    equalPoints.push([closestPoint[2].toPrecision(3), closestPoint[3].toPrecision(3)]);
-                } else if (dist == closestDist) {
-                    equalPoints.push([point[2], point[3]]);
+                    closestPoints = [];
+                    closestPoints.push([closestPoint[0], closestPoint[1], closestPoint[2].toPrecision(3), closestPoint[3].toPrecision(3)]);
                 }
             }
         }
+
+        for (const point of graph.criticalPoints) {
+            validatePoint(point, critAngleBuffer);
+        }
+
+        if (!closestPoint) {
+            for (const point of graph.renderPoints) {
+                validatePoint(point, distBuffer);
+            }
+        }
+
+        // ------------------------------------------------------
+        // DEPRECATED ALTERNATIVE FOR CURVE HOVER CALCULATIONS
+        // ------------------------------------------------------
+        // var r = evalMath(graph.eval, mAngle);
+        // console.log(r, mAngle)
+        // var cosx = mPos[0] / Math.sqrt(mPos[0] ** 2 + mPos[1] ** 2);
+        // var sinx = mPos[1] / Math.sqrt(mPos[0] ** 2 + mPos[1] ** 2);
+        // var cosx = Math.cos(mAngle);
+        // var sinx = Math.sin(mAngle);
+
+        // var rx = r * cosx * defaultGridSize; // no sf needed, built-in to r
+        // var ry = r * sinx * defaultGridSize; // no sf needed, built-in to r
+
+        // console.log("r diff:", mr - (r * defaultGridSize * sf), "mr:", mr, "r:", r, "mAngle:", mAngle, "cos(x):", cosx, "sin(x):", sinx, "rx:", rx, "ry:", ry);
+
+        // var r2 = evalMath(graph.eval, mPos[0] + Math.PI);
+        // if (Math.abs(mr - (r * defaultGridSize * sf)) <= distBuffer * sf) {
+        //     color = graph.color;
+        //     closestPoint = [rx, ry];
+        //     equalPoints.push([r.toPrecision(3), mAngle.toPrecision(3)]);
+        // }
+        // ------------------------------------------------------
     }
 
     var toWindow = panZoom.canvasToWindow(closestPoint[0], closestPoint[1]);
     pointCursor = closestPoint ? {
-        x: closestPoint[0],
-        y: -closestPoint[1],
         toWindow,
         color,
-        equalPoints,
+        closestPoints,
     } : false;
 }
 
@@ -113,10 +200,10 @@ const panZoom = {
         this.y = y - (y - this.y) * sc;
     },
     sf() { // sf stands for scale factor
-        return scaleRate / this.scale;
+        return 1 / this.scale;
     },
     polarToRect(...args) {
-        const f = (x, y) => [x * Math.cos(y) * defaultGridSize, x * Math.sin(y) * -defaultGridSize];
+        const f = (r, t) => [r * Math.cos(t) * defaultGridSize, r * Math.sin(t) * defaultGridSize];
         if (args.length == 1) return f(args[0][0], args[0][1]);
         else return f(args[0], args[1]);
     },
@@ -127,13 +214,13 @@ const panZoom = {
     },
     windowToCanvas(x, y) { // converts a coordinate in the window to the grid canvas
         var sf = panZoom.sf();
-        console.log(sf)
         var ratio = window.devicePixelRatio;
 
         var poleX = getWindowPoleX();
         var poleY = getWindowPoleY();
         var centerX = -(this.x - poleX);
         var centerY = this.y - poleY; // (centerX, centerY) is where screen is centered about
+        // note: looks like there's some offset for this.x and this.y
 
         var pointX = x - (window.innerWidth / 2);
         var pointY = -(y - (window.innerHeight / 2));
@@ -180,13 +267,14 @@ function drawGrid() {
 
         var newX = Math.round(Math.abs(xi / defaultGridSize) * 100) / 100;
         var newY = Math.round(Math.abs(yi / defaultGridSize) * 100) / 100;
-        var yMetrics = ctx.measureText(newY);
+        // var yMetrics = ctx.measureText(newY);
         
+        // deprecated
         // vertical lines with fixed gap for x labels
-        ctx.moveTo(xi, y);
-        ctx.lineTo(xi, 5 * sf);
-        ctx.moveTo(xi, 25 * sf);
-        ctx.lineTo(xi, y + size);
+        // ctx.moveTo(xi, y);
+        // ctx.lineTo(xi, 5 * sf);
+        // ctx.moveTo(xi, 25 * sf);
+        // ctx.lineTo(xi, y + size);
 
         // x labels
         ctx.textAlign = "center"
@@ -198,11 +286,12 @@ function drawGrid() {
             ctx.fillText(newX.toString(), xi, 5 * sf);
         }
 
+        // deprecated
         // horizontal grid lines with calculated gap for y labels
-        ctx.moveTo(x, yi);
-        ctx.lineTo(-(yMetrics.width + (7 * sf)), yi);
-        ctx.moveTo(-5 * sf, yi);
-        ctx.lineTo(x + size, yi);
+        // ctx.moveTo(x, yi);
+        // ctx.lineTo(-(yMetrics.width + (7 * sf)), yi);
+        // ctx.moveTo(-5 * sf, yi);
+        // ctx.lineTo(x + size, yi);
 
         // y labels
         if (yi == 0) continue;
@@ -219,24 +308,43 @@ function drawGrid() {
 
 
     // ------------------------------------------------------
-    // HALFWAY GRID LINES
+    // CRITICAL ANGLE MARKINGS (pi/6, pi/4, pi/3, etc.)
     // ------------------------------------------------------
     panZoom.apply();
-    ctx.lineWidth = 0.5;
-    ctx.strokeStyle = "#999"
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#444"
     ctx.beginPath();
-    for (let i = 0; i < size; i += gridScale) {
-        var xi = x + i + (gridScale / 2);
-        var yi = y + i + (gridScale / 2);
-        
-        ctx.moveTo(xi, y);
-        ctx.lineTo(xi, y + size);
-
-        ctx.moveTo(x, yi);
-        ctx.lineTo(x + size, yi);
+    var requiredSize = (size * sf) + (panZoom.poleDist() * (1/sf));
+    for (const angle of criticalAngles) {
+        ctx.moveTo(0, 0);
+        ctx.lineTo(requiredSize * Math.cos(angle.value), requiredSize * Math.sin(angle.value));
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
     ctx.stroke();
+    ctx.closePath();
+    // ------------------------------------------------------
+
+
+
+    // ------------------------------------------------------
+    // HALFWAY GRID LINES (deprecated)
+    // ------------------------------------------------------
+    // panZoom.apply();
+    // ctx.lineWidth = 0.5;
+    // ctx.strokeStyle = "#999"
+    // ctx.beginPath();
+    // for (let i = 0; i < size; i += gridScale) {
+    //     var xi = x + i + (gridScale / 2);
+    //     var yi = y + i + (gridScale / 2);
+        
+    //     ctx.moveTo(xi, y);
+    //     ctx.lineTo(xi, y + size);
+
+    //     ctx.moveTo(x, yi);
+    //     ctx.lineTo(x + size, yi);
+    // }
+    // ctx.setTransform(1, 0, 0, 1, 0, 0); // reset the transform so the lineWidth is proportional
+    // ctx.stroke();
     // ------------------------------------------------------
 
     
@@ -245,9 +353,9 @@ function drawGrid() {
     // RADIAL GRID LINES
     // ------------------------------------------------------
     panZoom.apply();
-    ctx.lineWidth = 0.6;
+    ctx.lineWidth = 0.5;
     ctx.beginPath();
-    var radialSize = (size * sf) + panZoom.poleDist();
+    var radialSize = (size * sf) + (panZoom.poleDist() * (1/sf));
     for (let i = 0; i < radialSize; i += gridScale) {
         var xi = x + i;
         var yi = y + i;
@@ -276,6 +384,11 @@ function drawGrid() {
     ctx.closePath();
     // ------------------------------------------------------
 
+
+
+    // ------------------------------------------------------
+    // RENDER CURVES IN WORKSPACE
+    // ------------------------------------------------------
     ctx.lineWidth = 3.25;
     graphs.forEach((graph) => {
         panZoom.apply();
@@ -296,7 +409,7 @@ function drawGrid() {
                     panZoom.apply();
                     ctx.fillStyle = "#000"
                     ctx.beginPath();
-                    ctx.arc(p1[0], p1[1], 8 * sf, 0, 2 * Math.PI);
+                    ctx.arc(p1[0], -p1[1], 8 * sf, 0, 2 * Math.PI);
                     ctx.fill();
                     ctx.closePath();
                 }
@@ -305,23 +418,26 @@ function drawGrid() {
 
             var p2 = graph.renderPoints[i + 1];
             if (p2 == "asymptote") continue;
-            ctx.moveTo(p1[0], p1[1]);
-            ctx.lineTo(p2[0], p2[1]);
+            ctx.moveTo(p1[0], -p1[1]);
+            ctx.lineTo(p2[0], -p2[1]);
         }
     });
+    // ------------------------------------------------------
+
+
 
     // ------------------------------------------------------
     // IF MOUSE IS HOVERING OVER A CURVE
     // ------------------------------------------------------
     if (pointCursor) {
-        var html = `<p>${pointCursor.equalPoints[0][0]}, ${pointCursor.equalPoints[0][1]}</p>`
+        var html = `<p>${pointCursor.closestPoints[0][2]}, ${pointCursor.closestPoints[0][3]}</p>`
 
         tooltipDummy.innerHTML = html;
 
         var width = tooltipDummy.clientWidth;
         var height = tooltipDummy.clientHeight;
         var newX = pointCursor.toWindow[0] - (width / 2);
-        var newY = pointCursor.toWindow[1] - 50;
+        var newY = pointCursor.toWindow[1] - 40;
         $(tooltip).css({
             opacity: 1,
             left: newX,
@@ -335,26 +451,25 @@ function drawGrid() {
         panZoom.apply();
         ctx.fillStyle = pointCursor.color;
         ctx.beginPath();
-        ctx.arc(pointCursor.x, pointCursor.y, defaultPointRadius * sf, 0, 2 * Math.PI);
+        ctx.arc(pointCursor.closestPoints[0][0], -pointCursor.closestPoints[0][1], defaultPointRadius * sf, 0, 2 * Math.PI);
         ctx.fill();
         ctx.closePath();
-
-        // ctx.fillStyle = "#000"
-        // ctx.fillRect(pointCursor.x - (75 * sf), pointCursor.y - (50 * sf), 150 * sf, 40 * sf);
-
-        // ctx.fillStyle = "#fff"
-        // ctx.textAlign = "center"
-        // let i = 0;
-        // for (const point of pointCursor.equalPoints) {
-        //     ctx.fillText(`(${point[0]}, ${point[1]})`, pointCursor.x, pointCursor.y - (28 * sf) - (i * 15 * sf));
-        //     i++;
-        // }
-
-        
     } else {
         tooltip.style.opacity = 0;
     }
     // ------------------------------------------------------
+
+    // DEPRECATED: plotting individual points on the graph
+    // ctx.fillStyle = "#000"
+    // ctx.fillRect(pointCursor.x - (75 * sf), pointCursor.y - (50 * sf), 150 * sf, 40 * sf);
+
+    // ctx.fillStyle = "#fff"
+    // ctx.textAlign = "center"
+    // let i = 0;
+    // for (const point of pointCursor.equalPoints) {
+    //     ctx.fillText(`(${point[0]}, ${point[1]})`, pointCursor.x, pointCursor.y - (28 * sf) - (i * 15 * sf));
+    //     i++;
+    // }
 }
 
 var w = canvas.width;
@@ -414,6 +529,14 @@ function animateGraphs(timestamp) {
     });
 }
 
+function evalMath(f, x) {
+    try {
+        return f.evaluate({ x });
+    } catch {
+        return false;
+    }
+}
+
 function addGraph(id, func, color) {
     var f;
     try {
@@ -430,16 +553,12 @@ function addGraph(id, func, color) {
     const allPoints = [];
     let lastR;
     for (let angle = defaultDomainStart; angle <= defaultDomainEnd; angle += step) {
-        var r;
-        try {
-            r = f.evaluate({ x: angle });
-        } catch (e) {
-            // console.error(e);
-            return false;
-        }
+        var r = evalMath(f, angle);
+        if (!r) continue;
         var p = panZoom.polarToRect([r, angle]);
 
         // primitive asymptote detection
+        // TODO: display error and don't show graph, no asymptotes should be allowed
         if (r < 0 && lastR > 0 && Math.abs(r) > lastR) allPoints.push("asymptote");
         else if (r > 0 && lastR < 0 && r > Math.abs(lastR)) allPoints.push("asymptote");
         lastR = r;
@@ -447,10 +566,21 @@ function addGraph(id, func, color) {
         allPoints.push([...p, r, angle]);
     }
 
+    const criticalPoints = [];
+    for (var critAngle of criticalAngles) {
+        var angle = critAngle.value;
+        var r = evalMath(f, angle);
+        if (!r) continue;
+        var p = panZoom.polarToRect([r, angle]);
+        criticalPoints.push([...p, r, angle]);
+    }
+
     var obj = {
         id,
         func,
+        eval: f,
         color,
+        criticalPoints,
         allPoints,
         renderPoints: [],
         animStart: performance.now(),
@@ -573,6 +703,7 @@ function addInputField(halfReveal, referenceElem) {
 
                 // deletes the current math field and focuses the previous one
                 function deleteField() {
+                    if (!div.previousSibling) return;
                     const previousField = div.previousSibling.querySelector(".mathinput");
                     div.remove();
                     if (previousField) {
