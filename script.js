@@ -146,13 +146,12 @@ function pointTooltip() {
                         closestPoints.push([closestPoint[0], closestPoint[1], closestPoint[2].toPrecision(3), closestPoint[3].toPrecision(3)]);
                     } else {
                         closestPoints.push([closestPoint[0], closestPoint[1], critData.r.toPrecision(3), critData.angle.toPrecision(3)]);
-                    }
-                }
-                if (critData) {
-                    criticalAngleData = {
-                        value: critData.value,
-                        numerator: critData.numerator,
-                        denominator: critData.denominator,
+                    
+                        criticalAngleData = {
+                            value: critData.value,
+                            numerator: critData.numerator,
+                            denominator: critData.denominator,
+                        }
                     }
                 }
             }
