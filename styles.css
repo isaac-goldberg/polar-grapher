@@ -13,6 +13,105 @@ body {
     left: 0px;
 }
 
+#header {
+    position: absolute;
+    top: 0;
+    text-align: center;
+    font-family: "Inter-Regular";
+    width: 100%;
+}
+
+#header .header-animtime {
+    position: absolute;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: fit-content;
+    background-color: #d7f5ff;
+    padding: 2px 8px 5px 8px;
+    border-radius: 0 0 15px 15px;
+    opacity: 85%;
+}
+
+#header .header-animtime p {
+    margin: 0 0 1px 0;
+    font-size: 12.5px;
+}
+
+#header .header-animtime span {
+    font-size: 11px;
+}
+
+.header-animtime input {
+    border-radius: 7.5px;
+    background-color: transparent;
+    border: 1px solid black;
+    width: 30px;
+    text-align: center;
+    outline: none;
+    transition: .2s ease;
+    font-size: 11px;
+}
+.header-animtime input:hover, .header-animtime input:focus {
+    transform: scale(1.1);
+}
+.header-animtime input:focus {
+    border: 1px solid black;
+}
+
+#reset-viewport {
+    position: absolute;
+    top: 7.5px;
+    left: 170px;
+    right: 0;
+    margin: 0 auto;
+    width: fit-content;
+    background-color: #569dff;
+    border-radius: 50%;
+    padding: 5px;
+    color: #ddd;
+    transition: .2s ease;
+    font-size: 14px;
+}
+#reset-viewport:hover {
+    cursor: pointer;
+    transform: scale(1.1);   
+}
+
+#help {
+    position: absolute;
+    top: 7.5px;
+    right: 5px;
+    margin-right: auto;
+    font-size: 24px;
+}
+
+#help svg {
+    color: #569dff;
+    transition: .2s ease;
+    cursor: pointer;
+}
+#help svg:hover {
+    transform: scale(1.2);
+}
+
+.help-modal {
+    max-width: 600px;
+}
+
+.help-modal a {
+    color: #00ccff;
+    display: inline-block;
+    transition: .2s ease;
+}
+.help-modal a:hover {
+    transform: scale(1.025);
+}
+
+::-webkit-scrollbar {
+    display: none;
+}
+
 #equations {
     position: absolute;
     top: 0px;

@@ -8,7 +8,8 @@ const defaultPointRadius = 9;
 const defaultDomainStart = 0;
 const defaultDomainEnd = 2 * Math.PI;
 const defaultSteps = 1000;
-const defaultAnimTime = 1.5; // seconds to finish drawing a graph
+const defaultAnimTime = 10; // seconds to finish drawing a graph
+var currentAnimTime = defaultAnimTime;
 
 const colors = ["#8B0000", "#b56d00", "#ffc400", "#a39e00", "#00dd00", "#008000", "#00bbff", "#0000ff", "#990299", "#ff00ff"]
 const criticalAngles = [
@@ -93,6 +94,8 @@ const criticalAngles = [
 const tooltip = document.getElementById("coords-tooltip");
 const tooltipDummy = document.getElementById("coords-tooltip-dummy");
 const equationsContainer = document.getElementById("equations");
+const animTimeInput = document.getElementById("animtime-input");
+const resetButton = document.getElementById("reset-viewport");
 const canvas = document.getElementById("graph");
 const ctx = canvas.getContext("2d");
 const font = new FontFace("Inter-Regular", "url(assets/Inter-Regular.ttf)");
@@ -101,12 +104,48 @@ font.load().then(f => document.fonts.add(f));
 const mouse = { x: 0, y: 0, button: false, wheel: 0, lastX: 0, lastY: 0, drag: false };
 const defaultGridSize = 128;  // grid size in screen pixels for adaptive and world pixels for static
 const scaleRate = 1.02; // Closer to 1: slower rate of change, less than 1: inverts scaling change and same rule
-const minScale = 0.012;
-const maxScale = 200;
+const minScale = 0.03;
+const maxScale = 7;
 
 var pointCursor = false;
 const graphs = [];
 const mathFields = new Map(); // used for tracking the content of math fields
+
+new jBox("Modal", {
+    attach: `#help`,
+    title: "Support",
+    content: "This graphing calculator was made to help with the visualization of limaçon curves, " +
+        "which are graphs in a polar coordinate system of the form <span style='font-style: italic'>r = a sinθ ± b</span>, or <span style='font-style: italic'>r = a cosθ ± b</span>. " +
+        "Points on a curve in the polar coordinate system can be difficult to know because one point " +
+        "can have different coordinates, so this calculator helps show the correct ones.<br /><br />" +
+        "The graphing animation and the point tooltips are features not offered by other well-known calculators such as Desmos, " +
+        "which is why I made this website. However, <span style='font-weight: 1000;'>this calculator CANNOT graph other equations - only basic sine and cosine curves.</span> It also can't even do basic algebra. Use Desmos for that." +
+        "<h3>Contact</h3>This website was made by Isaac Goldberg. " +
+        "If you want to report any bugs in the website or if you have any suggestions for an update, " +
+        "join my <i class='fa-brands fa-discord'></i> <a href='https://discord.gg/4qnMU24u4G' target='_blank'>Discord support server</a> to send me a message." + 
+        "<h3>Source Code</h3>" +
+        "This project is open source under the MIT License and is available at <i class='fa-brands fa-github'></i> <a href='https://github.com/isaac-goldberg/polar-grapher' target='_blank'>this GitHub repository</a>. " +
+        "Definitely feel free to make a pull request if you want to make any updates, although the code is a horrible mess, and I probably won't ever refactor it.",
+    addClass: "jBox-custom-modal help-modal",
+});
+
+animTimeInput.onchange = () => {
+    var previous = currentAnimTime;
+    var n;
+    try {
+        n = parseFloat(animTimeInput.value);
+        if (n <= 0 || n >= 1000) throw "invalid"
+    } catch {
+        n = defaultAnimTime;
+    }
+    currentAnimTime = n;
+    animTimeInput.value = n.toString();
+    if (currentAnimTime != previous) {
+        for (const graph of graphs) {
+            replayGraph(graph);
+        }
+    }
+}
 
 function pointDist(p1, p2) {
     return Math.sqrt(((p2[0] - p1[0]) ** 2) + ((p2[1] - p1[1]) ** 2));
@@ -134,8 +173,6 @@ function pointTooltip() {
     var closestDist = Infinity;
     var closestPoints = [];
     for (const graph of graphs) {
-        if (!graph.animDone) continue;
-
         var possiblePoints = [];
 
         function validatePoint(point, buffer, critData) {
@@ -165,6 +202,7 @@ function pointTooltip() {
         }
 
         for (const point of graph.criticalPoints) {
+            if (point.angle > graph.inputReached) continue;
             validatePoint(point.p, critAngleBuffer, point);
         }
 
@@ -226,6 +264,8 @@ function mouseEvents(e) {
 ["mousedown", "mouseup", "mousemove"].forEach(name => document.addEventListener(name, mouseEvents));
 document.addEventListener("wheel", mouseEvents, { passive: false });
 
+resetButton.addEventListener("click", () => panZoom.reset());
+
 function getWindowPoleX() {
     return window.innerWidth * window.devicePixelRatio * 0.5;
 }
@@ -238,6 +278,11 @@ const panZoom = {
     x: getWindowPoleX(),
     y: getWindowPoleY(),
     scale: 1,
+    reset() {
+        this.x = getWindowPoleX();
+        this.y = getWindowPoleY();
+        this.scale = 1;
+    },
     apply() { ctx.setTransform(this.scale, 0, 0, this.scale, this.x, this.y) },
     scaleAt(x, y, sc) {  // x & y are screen coords, not world
         if (this.scale * sc > maxScale || this.scale * sc < minScale) return;
@@ -266,7 +311,6 @@ const panZoom = {
         var poleY = getWindowPoleY();
         var centerX = -(this.x - poleX);
         var centerY = this.y - poleY; // (centerX, centerY) is where screen is centered about
-        // note: looks like there's some offset for this.x and this.y
 
         var pointX = x - (window.innerWidth / 2);
         var pointY = -(y - (window.innerHeight / 2));
@@ -587,8 +631,16 @@ function update(timestamp) {
             mouse.lastY = mouse.y;
             mouse.drag = true;
         } else {
-            panZoom.x += (mouse.x - mouse.lastX) * ratio;
-            panZoom.y += (mouse.y - mouse.lastY) * ratio;
+            var poleX = getWindowPoleX();
+            var poleY = getWindowPoleY();
+            var newX = panZoom.x + (mouse.x - mouse.lastX) * ratio;
+            var newY = panZoom.y + (mouse.y - mouse.lastY) * ratio;
+            if (Math.abs(newX - poleX) < 1000 || (Math.abs(newX) < Math.abs(mouse.x))) {
+                panZoom.x = newX;
+            }
+            if (Math.abs(newY - poleY) < 1000 || (Math.abs(newY) < Math.abs(mouse.y))) {
+                panZoom.y = newY;
+            }
             mouse.lastX = mouse.x;
             mouse.lastY = mouse.y;
         }
@@ -610,16 +662,24 @@ function removeTooltipClass(name) {
     tooltip.classList.remove(name);
 }
 
+function replayGraph(graph) {
+    graph.animDone = false;
+    graph.renderPoints = [];
+    graph.animStart = performance.now();
+}
+
 function animateGraphs(timestamp) {
     graphs.forEach((graph) => {
         if (graph.animDone) return;
         var totalPoints = graph.allPoints.length;
 
         var elapsedSeconds = (timestamp - graph.animStart) / 1000;
-        var percentage = elapsedSeconds / defaultAnimTime;
+        var percentage = elapsedSeconds / currentAnimTime;
         var renderedPoints = totalPoints * percentage;
 
         graph.renderPoints = graph.allPoints.slice(0, renderedPoints);
+        if (graph.renderPoints.length == 0) graph.inputReached = 0;
+        else graph.inputReached = graph.renderPoints[graph.renderPoints.length - 1][3];
         if (renderedPoints >= totalPoints) graph.animDone = true;
     });
 }
@@ -696,6 +756,7 @@ function addGraph(id, func, color) {
         criticalPoints,
         allPoints,
         renderPoints: [],
+        inputReached: 0,
         animStart: performance.now(),
         animDone: false,
     }
@@ -995,9 +1056,7 @@ function addInputField(halfReveal, referenceElem) {
             if (div.classList.contains("half-reveal")) return;
             var graph = graphs.find(g => g.id == id);
             if (!graph) return sendNotice("That equation isn't currently being graphed!", "red");
-            graph.animDone = false;
-            graph.renderPoints = [];
-            graph.animStart = performance.now();
+            replayGraph(graph);
         });
 
         finishDiv.addEventListener("click", () => {
