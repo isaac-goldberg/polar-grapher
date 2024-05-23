@@ -125,7 +125,13 @@ new jBox("Modal", {
         "join my <i class='fa-brands fa-discord'></i> <a href='https://discord.gg/4qnMU24u4G' target='_blank'>Discord support server</a> to send me a message." + 
         "<h3>Source Code</h3>" +
         "This project is open source under the MIT License and is available at <i class='fa-brands fa-github'></i> <a href='https://github.com/isaac-goldberg/polar-grapher' target='_blank'>this GitHub repository</a>. " +
-        "Definitely feel free to make a pull request if you want to make any updates, although the code is a horrible mess, and I probably won't ever refactor it.",
+        "Definitely feel free to make a pull request if you want to make any updates, although the code is a horrible mess, and I probably won't ever refactor it." +
+        "<h3>Dependencies</h4>This project wouldn't be possible without the following:<br />" +
+        "<a href='http://mathquill.com/' target='_blank'>MathQuill</a><br />" +
+        "<a href='https://mathjs.org/' target='_blank'>math.js</a><br />" +
+        "<a href='https://github.com/davidtranhq/tex-math-parser' target='_blank'>This person's amazing LaTeX to math.js parser</a><br />" + 
+        "<a href='https://stephanwagner.me/jBox' target='_blank'>jBox</a><br />" +
+        "<a href='https://jquery.com/' target='_blank'>jQuery</a>",
     addClass: "jBox-custom-modal help-modal",
 });
 
