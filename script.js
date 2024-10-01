@@ -798,7 +798,7 @@ function createIconButton(title, iconClasses, containerClasses) {
 }
 
 var lastJbox;
-function addInputField(halfReveal, referenceElem) {
+function addInputField(addDefaultEquation, halfReveal, referenceElem) {
     const id = uid();
     var currentColor;
 
@@ -836,7 +836,7 @@ function addInputField(halfReveal, referenceElem) {
 
     function unreveal() {
         div.classList.remove("half-reveal");
-        addInputField(true);
+        addInputField(false, true);
     }
 
     if (halfReveal) {
@@ -971,7 +971,7 @@ function addInputField(halfReveal, referenceElem) {
             },
             enter: () => {
                 // enter key pressed
-                addInputField(false, div);
+                addInputField(false, false, div);
             }
         }
     });
@@ -1088,6 +1088,8 @@ function addInputField(halfReveal, referenceElem) {
         });
     }, (1));
 
+    if (addDefaultEquation) mathField.latex(String.raw`5\sin\left(3θ\right)`);
+
     if (!halfReveal) mathField.focus();
 
     // jBox integration
@@ -1114,7 +1116,7 @@ function sendNotice(content, color) {
     });
 }
 
-addInputField();
 addInputField(true);
+addInputField(false, true);
 
 window.requestAnimationFrame(update);
