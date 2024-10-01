@@ -1088,7 +1088,7 @@ function addInputField(addDefaultEquation, halfReveal, referenceElem) {
         });
     }, (1));
 
-    if (addDefaultEquation) mathField.latex(String.raw`5\sin\left(3θ\right)`);
+    if (addDefaultEquation) mathField.latex(String.raw`3\sin\left(5θ\right)`);
 
     if (!halfReveal) mathField.focus();
 
